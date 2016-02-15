@@ -25,3 +25,7 @@ y = rand(mtree, ranks())
 
 x = rand(mtree, ranks())
 @test_approx_eq_eps(norm(2*x - truncate!(x+x, adaptive(1e-12))), 0, 1e-12)
+
+x = rand(mtree, ranks())
+y = rand(mtree, ranks())
+@test_approx_eq_eps(dot(x,y), dot(contract(x), contract(y)), 1e-12)

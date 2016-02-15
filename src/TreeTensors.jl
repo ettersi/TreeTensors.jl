@@ -130,9 +130,23 @@ end
 truncate(x::TreeTensor, rank) = truncate!(copy(x), rank)
 
 
-# Norm
+# Norm and dot
 
 norm!(x::TreeTensor) = norm(orthogonalize!(x)[:root])
 norm( x::TreeTensor) = norm(orthogonalize( x)[:root])
+
+function dot(x::TreeTensor, y::TreeTensor)
+    x = TreeTensor(
+        modetree(x), 
+        (Tree=>Tensor{scalartype(x)})[
+            v => tag!(conj(x[v]), :left, neighbor_edges(v)) 
+            for v in vertices(x)
+        ]
+    )
+    for (v,p) in edges(x, leaves_to_root)
+        x[p] *= x[v]*tag(y[v], :right, neighbor_edges(v))
+    end
+    return single_entry(x[:root]*tag(y[:root], :right, neighbor_edges(tree(y))))
+end
 
 end # module
