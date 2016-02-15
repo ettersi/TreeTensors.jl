@@ -91,6 +91,10 @@ for f in (:edges, :edges_with_root, :vertices)
     @eval begin
         $f(v::Tree, order) = $f(v,v,order)
         $f(x, order) = $f(tree(x),order)
+
+        $f(v::Tree, p::Tree) = $f(v,p,root_to_leaves)
+        $f(v::Tree) = $f(v,v)
+        $f(x) = $f(tree(x))
     end
 end
 
