@@ -44,14 +44,14 @@ setindex!(x::TreeTensor, xv, s::Symbol) = x[index(x,s)] = xv
 # Initialization
 
 ones{T}(::Type{T}, mtree::ModeTree) = TreeTensor(mtree, (Tree=>Tensor{T})[
-    v => ones([[Mode(e,1) for e in neighbor_edges(v)]; mtree[v]])
+    v => ones(T, [[Mode(e,1) for e in neighbor_edges(v)]; mtree[v]])
     for v in vertices(mtree, root_to_leaves)
 ])
 function rand{T}(::Type{T}, mtree::ModeTree, r)
     evaluate(r::Int,e) = r
     evaluate(r::Dict,e) = r[e]
     return TreeTensor(mtree, (Tree=>Tensor{T})[
-        v => rand([[Mode(e,evaluate(r,e)) for e in neighbor_edges(v)]; mtree[v]])
+        v => rand(T, [[Mode(e,evaluate(r,e)) for e in neighbor_edges(v)]; mtree[v]])
         for v in vertices(mtree, root_to_leaves)
     ])
 end
