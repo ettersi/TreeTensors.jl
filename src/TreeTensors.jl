@@ -14,7 +14,7 @@ include("ModeTrees.jl")
 
 typealias TensorDict{T} Dict{Tree,Tensor{T}}
 immutable TreeTensor{T}
-    mtree::ModeTree
+    mtree::AbstractModeTree
     tensors::TensorDict{T}
 end
 call{T}(::Type{TreeTensor{T}}, mtree) = TreeTensor(mtree, TensorDict{T}())
@@ -43,11 +43,11 @@ setindex!(x::TreeTensor, xv, s::Symbol) = x[index(x,s)] = xv
 
 # Initialization
 
-ones{T}(::Type{T}, mtree::ModeTree) = TreeTensor(mtree, (Tree=>Tensor{T})[
+ones{T}(::Type{T}, mtree::AbstractModeTree) = TreeTensor(mtree, (Tree=>Tensor{T})[
     v => ones(T, [[Mode(e,1) for e in neighbor_edges(v)]; mtree[v]])
     for v in vertices(mtree, root_to_leaves)
 ])
-function rand{T}(::Type{T}, mtree::ModeTree, r)
+function rand{T}(::Type{T}, mtree::AbstractModeTree, r)
     evaluate(r::Int,e) = r
     evaluate(r::Dict,e) = r[e]
     return TreeTensor(mtree, (Tree=>Tensor{T})[
@@ -56,13 +56,13 @@ function rand{T}(::Type{T}, mtree::ModeTree, r)
     ])
 end
 for f in (:ones, :rand)
-    @eval $f(mtree::ModeTree, x...) = $f(Float64, mtree, x...)
+    @eval $f(mtree::AbstractModeTree, x...) = $f(Float64, mtree, x...)
 end
 
 
 # Conversion to and from full
 
-function decompose(x::Tensor, mtree::ModeTree, rank)
+function decompose(x::Tensor, mtree, rank)
     y = TreeTensor{scalartype(x)}(mtree)
     for (v,p) in edges(y, leaves_to_root)
         b,s,y[v] = svd(x, [child_edges(v,p);mlabel(mtree[v])], PairSet(v,p), rank)

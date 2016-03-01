@@ -1,19 +1,30 @@
-export ModeTree, ModeTree!, link!, tree, mode
+export ModeTree, ModeTree!, link!, tree, mode, unsquare
 
 
 # Data structure
 
+abstract AbstractModeTree
+
 typealias ModeDict Dict{Tree,Vector{Mode}}
-immutable ModeTree
+immutable ModeTree <: AbstractModeTree
     tree::Tree
     free_modes::ModeDict
+end
+immutable SquaredModeTree <: AbstractModeTree
+    mtree::ModeTree
 end
 
 
 # Basic functions
 
 tree(t::ModeTree) = t.tree
+tree(t::SquaredModeTree) = tree(t.mtree)
+
+Tensors.square(t::ModeTree) = SquaredModeTree(t)
+unsquare(t::SquaredModeTree) = t.mtree
+
 for f in (:getindex, :setindex!) @eval $f(x::ModeTree, args...) = $f(x.free_modes, args...) end
+getindex(x::SquaredModeTree, v) = square(x.mtree[v]) 
 
 
 # Tree construction
