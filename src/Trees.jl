@@ -1,6 +1,6 @@
 export Tree, PairSet, Tree!, link!,
     neighbors, children, neighbor_edges, child_edges,
-    edges, vertices, root_to_leaves, leaves_to_root
+    edges, vertices, root_to_leaves, leaves_to_root, both_ways
 
 
 # Tree data structure
@@ -63,27 +63,35 @@ immutable RootToLeaves <: TraversalOrder end
 const root_to_leaves = RootToLeaves()
 immutable LeavesToRoot <: TraversalOrder end
 const leaves_to_root = LeavesToRoot()
+immutable BothWays <: TraversalOrder end
+const both_ways = BothWays()
 
 function edges_rec(v,p, order::TraversalOrder)
     for u in children(v,p) 
         if isa(order, RootToLeaves) produce(PairSet(u,v)); end
+        if isa(order, BothWays) produce(PairSet(v,u)); end
         edges_rec(u,v, order)
         if isa(order, LeavesToRoot) produce(PairSet(u,v)); end
+        if isa(order, BothWays) produce(PairSet(u,v)); end
     end
 end
 edges_with_root(v::Tree, p::Tree, order) = @task begin
     if isa(order, RootToLeaves) produce(PairSet(v,p)) end
+    if isa(order, BothWays) produce(PairSet(p,v)); end
     edges_rec(v,p, order)
     if isa(order, LeavesToRoot) produce(PairSet(v,p)) end
+    if isa(order, BothWays) produce(PairSet(v,p)); end
 end
 edges(v::Tree, p::Tree, order) = @task edges_rec(v,p, order)
 
 function vertices_rec(v,p, order::TraversalOrder)
     if isa(order, RootToLeaves) produce(v); end
+    if isa(order, BothWays) produce(v); end
     for u in children(v,p) 
         vertices_rec(u,v, order)
     end
     if isa(order, LeavesToRoot) produce(v); end
+    if isa(order, BothWays) produce(v); end
 end
 vertices(v::Tree, p::Tree, order) = @task vertices_rec(v,p, order)
 
