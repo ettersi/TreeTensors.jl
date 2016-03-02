@@ -15,17 +15,17 @@ mtree = link!(
 )
 ranks = () -> [e => rand(1:5) for e in edges(mtree, root_to_leaves)]
 
-x = rand(mode(mtree))
+x = rand(Complex{Float64},mode(mtree))
 y = contract!(decompose(x, mtree, maxrank()))
 @test_approx_eq_eps(norm(x-y), 0, 1e-14)
 
-x = rand(mtree, ranks())
-y = rand(mtree, ranks())
+x = rand(Complex{Float64}, mtree, ranks())
+y = rand(Complex{Float64}, mtree, ranks())
 @test_approx_eq_eps(norm(contract(x) + contract(y) - contract!(x+y)), 0, 1e-12)
 
-x = rand(mtree, ranks())
+x = rand(Complex{Float64}, mtree, ranks())
 @test_approx_eq_eps(norm(2*x - truncate!(x+x, adaptive(1e-12))), 0, 1e-12)
 
-x = rand(mtree, ranks())
-y = rand(mtree, ranks())
+x = rand(Complex{Float64}, mtree, ranks())
+y = rand(Complex{Float64}, mtree, ranks())
 @test_approx_eq_eps(dot(x,y), dot(contract(x), contract(y)), 1e-12)
