@@ -146,7 +146,7 @@ function dot(x::TreeTensor, y::TreeTensor)
     for (v,p) in edges(x, leaves_to_root)
         x[p] *= x[v]*tag(y[v], :right, neighbor_edges(v))
     end
-    return single_entry(x[:root]*tag(y[:root], :right, neighbor_edges(tree(y))))
+    return scalar(x[:root]*tag(y[:root], :right, neighbor_edges(tree(y))))
 end
 
 end # module
