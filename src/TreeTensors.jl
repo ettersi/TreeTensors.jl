@@ -47,6 +47,14 @@ ones{T}(::Type{T}, mtree::AbstractModeTree) = TreeTensor(mtree, (Tree=>Tensor{T}
     v => ones(T, [[Mode(e,1) for e in neighbor_edges(v)]; mtree[v]])
     for v in vertices(mtree, root_to_leaves)
 ])
+eye{T}(::Type{T}, mtree::AbstractModeTree) = TreeTensor(square(mtree), (Tree=>Tensor{T})[
+    v => begin
+        t = eye(T, [Mode(e,1) for e in neighbor_edges(v)]); 
+        t.modes = [t.modes, [Mode(e,1) for e in neighbor_edges(v)]]; 
+        return t
+    end
+    for v in vertices(mtree, root_to_leaves)
+])
 function rand{T}(::Type{T}, mtree::AbstractModeTree, r)
     evaluate(r::Int,e) = r
     evaluate(r::Dict,e) = r[e]
@@ -57,6 +65,9 @@ function rand{T}(::Type{T}, mtree::AbstractModeTree, r)
 end
 for f in (:ones, :rand)
     @eval $f(mtree::AbstractModeTree, x...) = $f(Float64, mtree, x...)
+end
+for f in (:ones, :eye)
+    @eval $f(x) = $f(scalartype(x), modetree(x))
 end
 
 
