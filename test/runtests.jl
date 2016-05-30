@@ -23,9 +23,13 @@ x = rand(Complex{Float64}, mtree, ranks())
 y = rand(Complex{Float64}, mtree, ranks())
 @test_approx_eq_eps(norm(contract(x) + contract(y) - contract!(x+y)), 0, 1e-12)
 
+x = rand(Complex{Float64}, square(mtree), ranks())
+y = rand(Complex{Float64}, square(mtree), ranks())
+@test_approx_eq_eps(norm(contract(x)*contract(y) - contract!(x*y)), 0, 1e-10)
+
 x = rand(Complex{Float64}, mtree, ranks())
 @test_approx_eq_eps(norm(2*x - truncate!(x+x, adaptive(1e-12))), 0, 1e-12)
 
 x = rand(Complex{Float64}, mtree, ranks())
 y = rand(Complex{Float64}, mtree, ranks())
-@test_approx_eq_eps(dot(x,y), dot(contract(x), contract(y)), 1e-12)
+@test_approx_eq_eps(dot(x,y), dot(contract(x), contract(y)), 1e-10)
