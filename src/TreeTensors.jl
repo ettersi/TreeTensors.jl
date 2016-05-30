@@ -51,7 +51,7 @@ eye{T}(::Type{T}, mtree::AbstractModeTree) = TreeTensor(square(mtree), (Tree=>Te
     v => begin
         t = eye(T, [Mode(e,1) for e in neighbor_edges(v)]); 
         t.modes = [t.modes, [Mode(e,1) for e in neighbor_edges(v)]]; 
-        return t
+        t
     end
     for v in vertices(mtree, root_to_leaves)
 ])
@@ -67,7 +67,7 @@ for f in (:ones, :rand)
     @eval $f(mtree::AbstractModeTree, x...) = $f(Float64, mtree, x...)
 end
 for f in (:ones, :eye)
-    @eval $f(x) = $f(scalartype(x), modetree(x))
+    @eval $f(x::TreeTensor) = $f(scalartype(x), modetree(x))
 end
 
 
@@ -125,7 +125,7 @@ orthogonalize(x::TreeTensor) = orthogonalize!(copy(x))
 
 function truncate!(x::TreeTensor, rank)
     orthogonalize!(x)
-    s = Dict{PairSet{Tree}, Tensor{scalartype(x)}}()
+    s = Dict{PairSet{Tree}, Tensor{real(scalartype(x))}}()
     for (v,p) in edges_with_root(x, root_to_leaves)
         for u in children(v,p)
             e = PairSet(u,v)
