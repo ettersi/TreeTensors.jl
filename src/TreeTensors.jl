@@ -105,6 +105,19 @@ function +{T}(x::TreeTensor{T}, y::TreeTensor{T})
         ]
     )
 end
+
+function *{T}(x::TreeTensor{T}, y::TreeTensor{T})
+    @assert unsquare(modetree(x)) == unsquare(modetree(y)) "x and y must have the same mode tree"
+    mtree = modetree(x)
+    return TreeTensor(
+        mtree, 
+        (Tree=>Tensor{T})[
+            v => mergem!(tag(x[v], :x,neighbor_edges(v))*tag(y[v], :y,neighbor_edges(v)), [[tag(:x,e),tag(:y,e)] => e for e in neighbor_edges(v)])
+            for v in vertices(mtree, root_to_leaves)
+        ]
+    )
+end
+
 *(a::Number, x::TreeTensor) = (y = copy(x); y[:root] *= a; return y)
 *(x::TreeTensor, a::Number) = a*x
 scale!(a::Number, x::TreeTensor) = (x[:root] *= a; return x)
