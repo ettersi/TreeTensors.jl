@@ -21,6 +21,7 @@ tree(t::ModeTree) = t.tree
 tree(t::SquaredModeTree) = tree(t.mtree)
 
 Tensors.square(t::ModeTree) = SquaredModeTree(t)
+unsquare(t::AbstractModeTree) = t
 unsquare(t::SquaredModeTree) = t.mtree
 
 for f in (:getindex, :setindex!) @eval $f(x::ModeTree, args...) = $f(x.free_modes, args...) end
