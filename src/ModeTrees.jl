@@ -58,3 +58,4 @@ function Tensors.mode(t::ModeTree)
     for D in values(t.free_modes) append!(modes, D) end
     return modes
 end
+Tensors.mode(t::SquaredModeTree) = square(mode(t.mtree))
