@@ -30,7 +30,12 @@ copy(x::TreeTensor) = TreeTensor(x.mtree, TensorDict{scalartype(x)}(x.tensors))
 
 # Indexing and iteration
 
-for f in (:getindex, :setindex!, :start, :next, :done, :eltype, :length) 
+for f in (
+    :getindex, :setindex!, 
+    :start, :next, :done, 
+    :eltype, :length, 
+    :keys, :values, :keytype, :valtype
+) 
     @eval $f(x::TreeTensor, args...) = $f(x.tensors, args...) 
 end
 function index(x::TreeTensor, s::Symbol)
@@ -49,8 +54,8 @@ ones{T}(::Type{T}, mtree::AbstractModeTree) = TreeTensor(mtree, (Tree=>Tensor{T}
 ])
 eye{T}(::Type{T}, mtree::AbstractModeTree) = TreeTensor(square(mtree), (Tree=>Tensor{T})[
     v => begin
-        t = eye(T, [Mode(e,1) for e in neighbor_edges(v)]); 
-        t.modes = [t.modes, [Mode(e,1) for e in neighbor_edges(v)]]; 
+        t = eye(T, mtree[v]); 
+        t.modes = [t.modes; [Mode(e,1) for e in neighbor_edges(v)]]; 
         t
     end
     for v in vertices(mtree, root_to_leaves)
@@ -112,7 +117,7 @@ function *{T}(x::TreeTensor{T}, y::TreeTensor{T})
     return TreeTensor(
         mtree, 
         (Tree=>Tensor{T})[
-            v => mergem!(tag(x[v], :x,neighbor_edges(v))*tag(y[v], :y,neighbor_edges(v)), [[tag(:x,e),tag(:y,e)] => e for e in neighbor_edges(v)])
+            v => mergem!(tag(x[v], 1,neighbor_edges(v))*tag(y[v], 2,neighbor_edges(v)), [[tag(1,e),tag(2,e)] => e for e in neighbor_edges(v)])
             for v in vertices(mtree, root_to_leaves)
         ]
     )
