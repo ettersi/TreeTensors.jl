@@ -129,6 +129,32 @@ scale!(a::Number, x::TreeTensor) = (x[:root] *= a; return x)
 scale!(x::TreeTensor, a::Number) = scale!(a,x)
 -(x::TreeTensor, y::TreeTensor) = x + (-1)*y
 
+conj(x::TreeTensor) = TreeTensor(x.mtree, (Tree=>Tensor{scalartype(x)})[v => conj(xv) for (v,xv) in x])
+
+
+# Transposition and conjugation
+
+for f in (:conj,:transpose,:ctranspose)
+    f! = symbol(string(f)*"!")
+    @eval begin
+        function Base.$f(t::TreeTensor)
+            return TreeTensor(
+                modetree(t),
+                (Tree=>Tensor{T})[
+                    v => $f(tv)
+                    for (v,tv) in t
+                ]
+            )
+        end
+        function Base.$f!(t::TreeTensor)
+            for v in keys(t)
+                t[v] = $f!(t[v])
+            end
+            return t
+        end
+    end
+end
+
 
 # Orthogonalisation and truncation
 
