@@ -30,19 +30,19 @@ getindex(x::SquaredModeTree, v) = square(x.mtree[v])
 
 # Tree construction
 
-function ModeTree!(children::Vector{ModeTree}, free_modes::Vector{Mode})
+function ModeTree!(free_modes::Vector{Mode}, children::ModeTree...) 
     r = Tree!([tree(u) for u in children]...)
     D = merge!(ModeDict(r => copy(free_modes)), [u.free_modes for u in children]...)
     return ModeTree(r,D)
 end
-ModeTree!(children::ModeTree...) = ModeTree!(ModeTree[children...], Mode[])
+ModeTree!(children::ModeTree...) = ModeTree!(Mode[], children...)
 function ModeTree!(free_modes::Vector{Mode})
     r = Tree()
     D = ModeDict(r => free_modes)
     return ModeTree(r,D)
 end
-ModeTree(children::Vector{ModeTree}, free_modes::Vector{Mode}) = ModeTree!(deepcopy(children), free_modes)
-ModeTree(children::ModeTree...) = ModeTree([children...], Mode[])
+ModeTree(free_modes::Vector{Mode}, children::ModeTree...) = ModeTree!(free_modes, deepcopy(children)...)
+ModeTree(children::ModeTree...) = ModeTree(Mode[], children...)
 
 function link!(v::ModeTree, u::ModeTree)
     link!(tree(v), tree(u))
