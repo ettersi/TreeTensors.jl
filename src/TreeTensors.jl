@@ -185,23 +185,41 @@ end
 truncate(x::TreeTensor, rank) = truncate!(copy(x), rank)
 
 
+# Contracted subtrees
+
+function contracted_subtree(v::Tree,p::Tree, c::TreeTensor, args::TreeTensor...)
+    cv = retag!(retag!(tag!(conj(args[1][v]), 1, neighbor_edges(v)), :C => :_), :R => :C)
+    for u in children(v,p) cv *= c[u] end
+    for i = 2:length(args)-1 cv *= tag(args[i][v], i, neighbor_edges(v)) end
+    cv *= retag!(tag(args[end][v], length(args), neighbor_edges(v)), :C => :_)
+    return cv
+end
+
+function contracted_subtrees(args::TreeTensor...)
+    c = TreeTensor(
+        modetree(args[1]), 
+        TensorDict{scalartype(args[1])}()
+    )
+    for (v,p) in edges(c, leaves_to_root)
+        c[v] = contracted_subtree(v,p,c,args...)
+    end
+    return c
+end
+
+
 # Norm and dot
 
 norm!(x::TreeTensor) = norm(orthogonalize!(x)[:root])
 norm( x::TreeTensor) = norm(orthogonalize( x)[:root])
 
 function dot(x::TreeTensor, y::TreeTensor)
-    x = TreeTensor(
-        modetree(x), 
-        (Tree=>Tensor{scalartype(x)})[
-            v => tag!(conj(x[v]), :left, neighbor_edges(v)) 
-            for v in vertices(x)
-        ]
+    return scalar(
+        contracted_subtree(
+           tree(x),tree(x), 
+           contracted_subtrees(x,y),
+           x,y
+        )
     )
-    for (v,p) in edges(x, leaves_to_root)
-        x[p] *= x[v]*tag(y[v], :right, neighbor_edges(v))
-    end
-    return scalar(x[:root]*tag(y[:root], :right, neighbor_edges(tree(y))))
 end
 
 end # module
