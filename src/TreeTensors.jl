@@ -2,7 +2,8 @@ module TreeTensors
 
 export TreeTensor, scalartype, modetree, tree, 
     decompose, contract!, contract,
-    orthogonalize, orthogonalize!, truncate, truncate!, norm!
+    orthogonalize, orthogonalize!, truncate, truncate!, norm!,
+    DenseSolver, GMRES, als!
 
 importall Base
 using Tensors
@@ -220,6 +221,147 @@ function dot(x::TreeTensor, y::TreeTensor)
            x,y
         )
     )
+end
+
+
+# Local solvers
+
+function localmatrix(A, v, xAx)
+    lA = tag(A[v], 2, neighbor_edges(v))
+    for u in neighbors(v)
+        lA *= xAx[u]
+    end
+    retag!(retag!(lA, 1 => :R), 3 => :C)
+    return lA
+end
+
+function localrhs(b, v, xb)
+    lb = tag(b[v], 2, neighbor_edges(v))
+    for u in neighbors(v)
+        lb *= xb[u]
+    end
+    untag!(lb, 1)
+    return lb
+end
+
+function localproblem(x,A,b, v, xAx,xb)
+    modes = x[v].modes
+    Av = tag(A[v],2,neighbor_edges(v))
+    c = [retag!(retag(xAx[u], 3 => :C), 1 => :R) for u in neighbors(v)]
+    matvec = xv -> nothing
+    if length(c) == 3
+        matvec = xv -> begin
+            xv = Tensor(modes,xv)
+            (c[3]*((c[1]*Av)*(c[2]*xv)))[mlabel(modes)]
+        end
+    elseif length(c) == 2
+        matvec = xv -> begin
+            xv = Tensor(modes,xv)
+            (c[2]*(Av*(c[1]*xv)))[mlabel(modes)]
+        end
+    elseif length(c) == 1
+        matvec = xv -> begin
+            xv = Tensor(modes,xv)
+            (c[1]*Av*xv)[mlabel(modes)]
+        end
+    else
+        error("Local matvec structure not implemented!")
+    end
+    return x[v][mlabel(modes)], matvec, localrhs(b,v,xb)[mlabel(modes)]
+end
+
+
+# Local solvers
+
+using IterativeSolvers
+
+abstract LocalSolver
+
+immutable DenseSolver <: LocalSolver end
+function localsolve!(x,A,b, solver::DenseSolver, v, xAx, xb)
+    x[v] = localmatrix(A,v,xAx)\localrhs(b,v,xb)
+end
+
+immutable GMRES <: LocalSolver
+    tol::Float64
+    maxiter::Int
+    restart::Int
+    warn::Bool
+end
+GMRES(; tol = sqrt(eps()), maxiter = 1, restart = 20, warn = false) = GMRES(tol, maxiter, restart, warn)
+function localsolve!(x,A,b, solver::GMRES, v, xAx,xb)
+    _,hist = gmres!(
+        localproblem(x,A,b, v, xAx,xb)...; 
+        tol = solver.tol,
+        maxiter = solver.maxiter, 
+        restart = solver.restart
+    )
+    if !hist.isconverged && solver.warn
+        warn(
+            "Local GMRES iteration did not convergence.\n"*
+            "  LSE size:  "*string(length(x[v]))*"\n"*
+            "  Threshold: "*string(hist.threshold)*"\n"*
+            "  Residuals: "*string(hist.residuals)
+        )
+    end
+end
+
+immutable CG <: LocalSolver
+    tol::Float64
+    maxiter::Int
+    warn::Bool
+end
+CG(; tol = sqrt(eps()), maxiter = 20, warn = false) = CG(tol, maxiter, warn)
+function localsolve!(x,A,b, solver::CG, v, xAx,xb)
+    _,hist = cg!(
+        localmatvec(x,A,b, v, xAx,xb)...;
+        tol = solver.tol,
+        maxiter = solver.maxiter
+    )
+    if !hist.isconverged && solver.warn
+        warn(
+            "Local CG iteration did not convergence.\n"*
+            "  LSE size:  "*string(length(x[v]))*"\n"*
+            "  Threshold: "*string(hist.threshold)*"\n"*
+            "  Residuals: "*string(hist.residuals)
+        )
+    end
+end
+
+
+# ALS linear solver
+
+function als!(
+    x,A,b, solver = GMRES(); 
+    maxiter::Int = 20, tol = sqrt(eps(real(scalartype(x))))
+)
+    updatenorms = zeros(real(scalartype(x)), maxiter)
+
+    orthogonalize!(x)
+    xAx = contracted_subtrees(x,A,x)
+    xb = contracted_subtrees(x,b)
+    for i = 1:maxiter
+        for (u,v) in edges(x, both_ways)
+            # Solve
+            xu = copy(x[u])
+            localsolve!(x,A,b, solver, u, xAx,xb)
+            updatenorms[i] = max(updatenorms[i], norm(xu - x[u]))
+
+            # Orthogonalize
+            x[u],r = qr(x[u],PairSet(u,v))
+            x[v] = r*x[v]
+
+            # Compute contracted subtrees
+            xAx[u] = contracted_subtree(u,v, xAx, x,A,x)
+            xb[u] = contracted_subtree(u,v, xb, x,b)
+        end
+
+        # Convergence check
+        if updatenorms[i] < tol*norm(x[:root])
+            return x, ConvergenceHistory(true, tol*norm(x[:root]), i, updatenorms[1:i])
+        end
+    end
+    return x, ConvergenceHistory(false, tol*norm(x[:root]), maxiter, updatenorms)
 end
 
 end # module
