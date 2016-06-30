@@ -1,10 +1,5 @@
 module TreeTensors
 
-export TreeTensor, scalartype, modetree, tree, 
-    decompose, contract!, contract,
-    orthogonalize, orthogonalize!, truncate, truncate!, norm!,
-    DenseSolver, GMRES, als!
-
 importall Base
 using Tensors
 include("Trees.jl")
@@ -13,6 +8,7 @@ include("ModeTrees.jl")
 
 # Tree tensor networks
 
+export TreeTensor
 typealias TensorDict{T} Dict{Tree,Tensor{T}}
 immutable TreeTensor{T}
     mtree::AbstractModeTree
@@ -23,6 +19,7 @@ call{T}(::Type{TreeTensor{T}}, mtree) = TreeTensor(mtree, TensorDict{T}())
 
 # Basic functions
 
+export modetree, tree
 Tensors.scalartype{T}(::Type{TreeTensor{T}}) = T
 modetree(x::TreeTensor) = x.mtree
 tree(x::TreeTensor) = tree(modetree(x))
@@ -69,16 +66,17 @@ function rand{T}(::Type{T}, mtree::AbstractModeTree, r)
         for v in vertices(mtree, root_to_leaves)
     ])
 end
-for f in (:ones, :rand)
-    @eval $f(mtree::AbstractModeTree, x...) = $f(Float64, mtree, x...)
+for f in (:ones, :rand, :eye)
+    @eval $f(mtree::AbstractModeTree, args...) = $f(Float64, mtree, args...)
 end
-for f in (:ones, :eye)
-    @eval $f(x::TreeTensor) = $f(scalartype(x), modetree(x))
+for f in (:ones, :rand, :eye)
+    @eval $f(x::TreeTensor, args...) = $f(scalartype(x), modetree(x), args...)
 end
 
 
 # Conversion to and from full
 
+export decompose
 function decompose(x::Tensor, mtree, rank)
     y = TreeTensor{scalartype(x)}(mtree)
     for (v,p) in edges(y, leaves_to_root)
@@ -89,6 +87,7 @@ function decompose(x::Tensor, mtree, rank)
     return y
 end
 
+export contract!, contract
 function contract!(x::TreeTensor)
     for (v,p) in edges(x, leaves_to_root)
         x[p] *= x[v]
@@ -159,6 +158,7 @@ end
 
 # Orthogonalisation and truncation
 
+export orthogonalize!, orthogonalize
 function orthogonalize!(x::TreeTensor)
     for (v,p) in edges(x, leaves_to_root)
         x[v],c = qr(x[v], PairSet(v,p))
@@ -189,7 +189,7 @@ truncate(x::TreeTensor, rank) = truncate!(copy(x), rank)
 # Contracted subtrees
 
 function contracted_subtree(v::Tree,p::Tree, c::TreeTensor, args::TreeTensor...)
-    cv = retag!(retag!(tag!(conj(args[1][v]), 1, neighbor_edges(v)), :C => :_), :R => :C)
+    cv = retag!(tag!(conj(args[1][v]), 1, neighbor_edges(v)), :C => :_, :R => :C)
     for u in children(v,p) cv *= c[u] end
     for i = 2:length(args)-1 cv *= tag(args[i][v], i, neighbor_edges(v)) end
     cv *= retag!(tag(args[end][v], length(args), neighbor_edges(v)), :C => :_)
@@ -210,6 +210,7 @@ end
 
 # Norm and dot
 
+export norm!
 norm!(x::TreeTensor) = norm(orthogonalize!(x)[:root])
 norm( x::TreeTensor) = norm(orthogonalize( x)[:root])
 
@@ -231,7 +232,7 @@ function localmatrix(A, v, xAx)
     for u in neighbors(v)
         lA *= xAx[u]
     end
-    retag!(retag!(lA, 1 => :R), 3 => :C)
+    retag!(lA, 1 => :R, 3 => :C)
     return lA
 end
 
@@ -244,30 +245,32 @@ function localrhs(b, v, xb)
     return lb
 end
 
-function localproblem(x,A,b, v, xAx,xb)
-    modes = x[v].modes
+function localmatvecfunc(A, v, xAx)
     Av = tag(A[v],2,neighbor_edges(v))
-    c = [retag!(retag(xAx[u], 3 => :C), 1 => :R) for u in neighbors(v)]
-    matvec = xv -> nothing
+    c = [retag(xAx[u], 3 => :C, 1 => :R) for u in neighbors(v)]
     if length(c) == 3
-        matvec = xv -> begin
-            xv = Tensor(modes,xv)
-            (c[3]*((c[1]*Av)*(c[2]*xv)))[mlabel(modes)]
+        return xv -> begin
+            (c[3]*((c[1]*Av)*(c[2]*xv)))
         end
     elseif length(c) == 2
-        matvec = xv -> begin
-            xv = Tensor(modes,xv)
-            (c[2]*(Av*(c[1]*xv)))[mlabel(modes)]
+        return xv -> begin
+            (c[2]*(Av*(c[1]*xv)))
         end
     elseif length(c) == 1
-        matvec = xv -> begin
-            xv = Tensor(modes,xv)
-            (c[1]*Av*xv)[mlabel(modes)]
+        return xv -> begin
+            (c[1]*Av*xv)
         end
     else
         error("Local matvec structure not implemented!")
     end
-    return x[v][mlabel(modes)], matvec, localrhs(b,v,xb)[mlabel(modes)]
+end
+
+function localproblem(x,A,b, v, xAx,xb)
+    modes = x[v].modes
+    matvec = localmatvecfunc(A, v, xAx)
+    return x[v][mlabel(modes)], 
+           xv -> (xv = Tensor(modes,xv); matvec(xv)[mlabel(modes)]), 
+           localrhs(b,v,xb)[mlabel(modes)]
 end
 
 
@@ -277,11 +280,13 @@ using IterativeSolvers
 
 abstract LocalSolver
 
+export DenseSolver
 immutable DenseSolver <: LocalSolver end
 function localsolve!(x,A,b, solver::DenseSolver, v, xAx, xb)
     x[v] = localmatrix(A,v,xAx)\localrhs(b,v,xb)
 end
 
+export GMRES
 immutable GMRES <: LocalSolver
     tol::Float64
     maxiter::Int
@@ -306,6 +311,7 @@ function localsolve!(x,A,b, solver::GMRES, v, xAx,xb)
     end
 end
 
+export CG
 immutable CG <: LocalSolver
     tol::Float64
     maxiter::Int
@@ -331,7 +337,8 @@ end
 
 # ALS linear solver
 
-function als!(
+export als_solve!
+function als_solve!(
     x,A,b, solver = GMRES(); 
     maxiter::Int = 20, tol = sqrt(eps(real(scalartype(x))))
 )
