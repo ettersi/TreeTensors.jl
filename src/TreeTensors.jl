@@ -24,6 +24,9 @@ Tensors.scalartype{T}(::Type{TreeTensor{T}}) = T
 modetree(x::TreeTensor) = x.mtree
 tree(x::TreeTensor) = tree(modetree(x))
 copy(x::TreeTensor) = TreeTensor(x.mtree, TensorDict{scalartype(x)}(x.tensors))
+convert{T}(::Type{TreeTensor{T}}, x::TreeTensor) = TreeTensor(x.mtree, convert(TensorDict{T},x.tensors))
+copyconvert{T}(::Type{TreeTensor{T}}, x::TreeTensor{T}) = copy(x)
+copyconvert{T}(::Type{TreeTensor{T}}, x::TreeTensor) = convert(TreeTensor{T}, x)
 
 
 # Indexing and iteration
@@ -99,31 +102,31 @@ contract(x::TreeTensor) = contract!(copy(x))
 
 # Arithmetic
 
-function +{T}(x::TreeTensor{T}, y::TreeTensor{T})
+function +(x::TreeTensor, y::TreeTensor)
     @assert modetree(x) == modetree(y) "x and y must have the same mode tree"
     mtree = modetree(x)
     return TreeTensor(
         mtree, 
-        (Tree=>Tensor{T})[
+        (Tree=>Tensor{promote_type(scalartype(x), scalartype(y))})[
             v => padcat(x[v],y[v], neighbor_edges(v)) 
             for v in vertices(mtree, root_to_leaves)
         ]
     )
 end
 
-function *{T}(x::TreeTensor{T}, y::TreeTensor{T})
+function *(x::TreeTensor, y::TreeTensor)
     @assert unsquare(modetree(x)) == unsquare(modetree(y)) "x and y must have the same mode tree"
     mtree = modetree(x)
     return TreeTensor(
         mtree, 
-        (Tree=>Tensor{T})[
+        (Tree=>Tensor{promote_type(scalartype(x),scalartype(y))})[
             v => mergem!(tag(x[v], 1,neighbor_edges(v))*tag(y[v], 2,neighbor_edges(v)), [[tag(1,e),tag(2,e)] => e for e in neighbor_edges(v)])
             for v in vertices(mtree, root_to_leaves)
         ]
     )
 end
 
-*(a::Number, x::TreeTensor) = (y = copy(x); y[:root] *= a; return y)
+*(a::Number, x::TreeTensor) = (y = copyconvert(TreeTensor{promote_type(typeof(a),scalartype(x))}, x); y[:root] *= a; return y)
 *(x::TreeTensor, a::Number) = a*x
 scale!(a::Number, x::TreeTensor) = (x[:root] *= a; return x)
 scale!(x::TreeTensor, a::Number) = scale!(a,x)
@@ -140,7 +143,7 @@ for f in (:conj,:transpose,:ctranspose)
         function Base.$f(t::TreeTensor)
             return TreeTensor(
                 modetree(t),
-                (Tree=>Tensor{T})[
+                (Tree=>Tensor{scalartype(t)})[
                     v => $f(tv)
                     for (v,tv) in t
                 ]
@@ -168,6 +171,7 @@ function orthogonalize!(x::TreeTensor)
 end
 orthogonalize(x::TreeTensor) = orthogonalize!(copy(x))
 
+export truncate!, truncate
 function truncate!(x::TreeTensor, rank)
     orthogonalize!(x)
     s = Dict{PairSet{Tree}, Tensor{real(scalartype(x))}}()
@@ -370,5 +374,143 @@ function als_solve!(
     end
     return x, ConvergenceHistory(false, tol*norm(x[:root]), maxiter, updatenorms)
 end
+
+
+# ALS sum
+
+export als_sum!
+function als_sum!{T}(
+    y,x::AbstractVector{TreeTensor{T}};
+    maxiter::Int = 20, tol = sqrt(eps(real(T)))
+)
+    updatenorms = zeros(real(T), maxiter)
+
+    orthogonalize!(y)
+    yx = [contracted_subtrees(y,x) for x in x]
+    for i = 1:maxiter
+        for (u,v) in edges(y, both_ways)
+            # Project
+            yunew = sum([localrhs(x, u, yx) for (x,yx) in zip(x,yx)])
+            updatenorms[i] = max(updatenorms[i], norm(yunew - y[u]))
+            y[u] = yunew
+
+            # Orthogonalize
+            y[u],r = qr(y[u],PairSet(u,v))
+            y[v] = r*y[v]
+
+            # Compute contracted subtrees
+            for (x,yx) in zip(x,yx)
+                local x,yx
+                yx[u] = contracted_subtree(u,v, yx, y,x)
+            end
+        end
+
+        # Convergence check
+        if updatenorms[i] < tol*norm(y[:root])
+            return y, ConvergenceHistory(true, tol*norm(y[:root]), i, updatenorms[1:i])
+        end
+    end
+    return y, ConvergenceHistory(false, tol*norm(y[:root]), maxiter, updatenorms)
+end
+
+
+# ALS AXPY
+
+export als_axpy!
+function als_axpy!(
+    z,A,x,y;
+    maxiter::Int = 20, tol = sqrt(eps(real(scalartype(x))))
+)
+    updatenorms = zeros(real(scalartype(x)), maxiter)
+
+    orthogonalize!(z)
+    zAx = contracted_subtrees(z,A,x)
+    zy = contracted_subtrees(z,y)
+    for i = 1:maxiter
+        for (u,v) in edges(z, both_ways)
+            # Project
+            zunew = localmatvecfunc(A, u, zAx)(x[u]) + localrhs(y, u, zy)
+            updatenorms[i] = max(updatenorms[i], norm(zunew - z[u]))
+            z[u] = zunew
+
+            # Orthogonalize
+            z[u],r = qr(z[u],PairSet(u,v))
+            z[v] = r*z[v]
+
+            # Compute contracted subtrees
+            zAx[u] = contracted_subtree(u,v, zAx, z,A,x)
+            zy[u] = contracted_subtree(u,v, zy, z,y)
+        end
+
+        # Convergence check
+        if updatenorms[i] < tol*norm(z[:root])
+            return z, ConvergenceHistory(true, tol*norm(z[:root]), i, updatenorms[1:i])
+        end
+    end
+    return z, ConvergenceHistory(false, tol*norm(z[:root]), maxiter, updatenorms)
+end
+
+
+## ALSSD linear solver
+#
+#function alssd_solve!(
+#    x,A,b, solver = GMRES(); 
+#    residualrank = 4, maxiter::Int = 20, tol = sqrt(eps(real(scalartype(x))))
+#)
+#    residualnorms = zeros(real(scalartype(x)), maxiter)
+#    tol *= norm(b)
+#
+#    z = rand(x, residualrank)
+#    for i = 1:maxiter
+#        als_axpy!(z, -A,x,b; maxiter = 1)
+#
+#        residualnorms[i] = norm!(z)
+#        if residualnorms[i] < tol
+#            return x,ConvergenceHistory(true, tol, i, residualnorms[1:i])
+#        end
+#
+#        x += z
+#        als_solve!(x,A,b, solver; maxiter = 1)
+#        truncate!(x, adaptive(tol))
+#    end
+#    return x
+#end
+
+
+## ALS operator inversion
+#
+#function als_inv!(
+#    X,A, solver = GMRES(); 
+#    maxiter::Int = 20, tol = sqrt(eps(real(scalartype(X))))
+#)
+#    updatenorms = zeros(real(scalartype(X)), maxiter)
+#
+#    orthogonalize!(X)
+#    XAX = contracted_subtrees(X,A,X)
+#    XAXt = contracted_subtrees(X,A,X)
+#    xb = contracted_subtrees(x,b)
+#    for i = 1:maxiter
+#        for (u,v) in edges(x, both_ways)
+#            # Solve
+#            xu = copy(x[u])
+#            localsolve!(x,A,b, solver, u, xAx,xb)
+#            updatenorms[i] = max(updatenorms[i], norm(xu - x[u]))
+#
+#            # Orthogonalize
+#            x[u],r = qr(x[u],PairSet(u,v))
+#            x[v] = r*x[v]
+#
+#            # Compute contracted subtrees
+#            xAx[u] = contracted_subtree(u,v, xAx, x,A,x)
+#            xb[u] = contracted_subtree(u,v, xb, x,b)
+#        end
+#
+#        # Convergence check
+#        if updatenorms[i] < tol*norm(x[:root])
+#            return x, ConvergenceHistory(true, tol*norm(x[:root]), i, updatenorms[1:i])
+#        end
+#    end
+#    return x, ConvergenceHistory(false, tol*norm(x[:root]), maxiter, updatenorms)
+#end
 
 end # module

@@ -1,7 +1,6 @@
-export ModeTree, ModeTree!, link!, tree, mode, unsquare
-
-
 # Data structure
+
+export ModeTree
 
 abstract AbstractModeTree
 
@@ -17,6 +16,8 @@ end
 
 # Basic functions
 
+export tree, unsquare
+
 tree(t::ModeTree) = t.tree
 tree(t::SquaredModeTree) = tree(t.mtree)
 
@@ -30,25 +31,40 @@ getindex(x::SquaredModeTree, v) = square(x.mtree[v])
 
 # Tree construction
 
+export ModeTree!, link!
+
 function ModeTree!(free_modes::Vector{Mode}, children::ModeTree...) 
     r = Tree!([tree(u) for u in children]...)
     D = merge!(ModeDict(r => copy(free_modes)), [u.free_modes for u in children]...)
     return ModeTree(r,D)
 end
-ModeTree!(children::ModeTree...) = ModeTree!(Mode[], children...)
 function ModeTree!(free_modes::Vector{Mode})
     r = Tree()
     D = ModeDict(r => free_modes)
     return ModeTree(r,D)
 end
 ModeTree(free_modes::Vector{Mode}, children::ModeTree...) = ModeTree!(free_modes, deepcopy(children)...)
-ModeTree(children::ModeTree...) = ModeTree(Mode[], children...)
+ModeTree(free_modes::Vector{Mode}) = ModeTree!(free_modes)
 
 function link!(v::ModeTree, u::ModeTree)
     link!(tree(v), tree(u))
     merge!(v.free_modes, u.free_modes)
     return v
 end
+
+
+# Common tree structures
+
+export lintree
+
+function lintree{T <: AbstractVector{Mode}}(D::AbstractVector{T})
+    mtree = ModeTree(D[1])
+    for i = 2:length(D)
+        mtree = ModeTree!(D[i], mtree)
+    end
+    return mtree
+end
+lintree(D::AbstractVector{Mode}) = lintree([[k] for k in D])
 
 
 # Other
