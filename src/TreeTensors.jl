@@ -14,7 +14,7 @@ immutable TreeTensor{T}
     mtree::AbstractModeTree
     tensors::TensorDict{T}
 end
-call{T}(::Type{TreeTensor{T}}, mtree) = TreeTensor(mtree, TensorDict{T}())
+(::Type{TreeTensor{T}}){T}(mtree) = TreeTensor(mtree, TensorDict{T}())
 
 
 # Basic functions
@@ -49,25 +49,25 @@ setindex!(x::TreeTensor, xv, s::Symbol) = x[index(x,s)] = xv
 
 # Initialization
 
-ones{T}(::Type{T}, mtree::AbstractModeTree) = TreeTensor(mtree, (Tree=>Tensor{T})[
+ones{T}(::Type{T}, mtree::AbstractModeTree) = TreeTensor(mtree, Dict{Tree,Tensor{T}}(
     v => ones(T, [[Mode(e,1) for e in neighbor_edges(v)]; mtree[v]])
     for v in vertices(mtree, root_to_leaves)
-])
-eye{T}(::Type{T}, mtree::AbstractModeTree) = TreeTensor(square(mtree), (Tree=>Tensor{T})[
+))
+eye{T}(::Type{T}, mtree::AbstractModeTree) = TreeTensor(square(mtree), Dict{Tree,Tensor{T}}(
     v => begin
         t = eye(T, mtree[v]); 
         t.modes = [t.modes; [Mode(e,1) for e in neighbor_edges(v)]]; 
         t
     end
     for v in vertices(mtree, root_to_leaves)
-])
+))
 function rand{T}(::Type{T}, mtree::AbstractModeTree, r)
     evaluate(r::Int,e) = r
     evaluate(r::Dict,e) = r[e]
-    return TreeTensor(mtree, (Tree=>Tensor{T})[
+    return TreeTensor(mtree, Dict{Tree,Tensor{T}}(
         v => rand(T, [[Mode(e,evaluate(r,e)) for e in neighbor_edges(v)]; mtree[v]])
         for v in vertices(mtree, root_to_leaves)
-    ])
+    ))
 end
 for f in (:ones, :rand, :eye)
     @eval $f(mtree::AbstractModeTree, args...) = $f(Float64, mtree, args...)
@@ -107,10 +107,10 @@ function +(x::TreeTensor, y::TreeTensor)
     mtree = modetree(x)
     return TreeTensor(
         mtree, 
-        (Tree=>Tensor{promote_type(scalartype(x), scalartype(y))})[
+        Dict{Tree,Tensor{promote_type(scalartype(x), scalartype(y))}}(
             v => padcat(x[v],y[v], neighbor_edges(v)) 
             for v in vertices(mtree, root_to_leaves)
-        ]
+        )
     )
 end
 
@@ -119,10 +119,10 @@ function *(x::TreeTensor, y::TreeTensor)
     mtree = modetree(x)
     return TreeTensor(
         mtree, 
-        (Tree=>Tensor{promote_type(scalartype(x),scalartype(y))})[
-            v => mergem!(tag(x[v], 1,neighbor_edges(v))*tag(y[v], 2,neighbor_edges(v)), [[tag(1,e),tag(2,e)] => e for e in neighbor_edges(v)])
+        Dict{Tree,Tensor{promote_type(scalartype(x),scalartype(y))}}(
+            v => mergem!(tag(x[v], 1,neighbor_edges(v))*tag(y[v], 2,neighbor_edges(v)), Dict([tag(1,e),tag(2,e)] => e for e in neighbor_edges(v)))
             for v in vertices(mtree, root_to_leaves)
-        ]
+        )
     )
 end
 
@@ -132,21 +132,19 @@ scale!(a::Number, x::TreeTensor) = (x[:root] *= a; return x)
 scale!(x::TreeTensor, a::Number) = scale!(a,x)
 -(x::TreeTensor, y::TreeTensor) = x + (-1)*y
 
-conj(x::TreeTensor) = TreeTensor(x.mtree, (Tree=>Tensor{scalartype(x)})[v => conj(xv) for (v,xv) in x])
-
 
 # Transposition and conjugation
 
 for f in (:conj,:transpose,:ctranspose)
-    f! = symbol(string(f)*"!")
+    f! = Symbol(string(f)*"!")
     @eval begin
         function Base.$f(t::TreeTensor)
             return TreeTensor(
                 modetree(t),
-                (Tree=>Tensor{scalartype(t)})[
+                Dict{Tree,Tensor{scalartype(t)}}(
                     v => $f(tv)
                     for (v,tv) in t
-                ]
+                )
             )
         end
         function Base.$f!(t::TreeTensor)
@@ -182,7 +180,7 @@ function truncate!(x::TreeTensor, rank)
             x[u] = scale!(s[e],d)*x[u]
             x[v] = scale!(b,s[e])
         end
-        x[v] = resize(x[v], [e => rank(s[e].data) for e in neighbor_edges(v)])
+        x[v] = resize(x[v], Dict(e => rank(s[e].data) for e in neighbor_edges(v)))
         scale!(x[v], [resize(1./s[e], Dict(e => msize(x[v],e))) for e in child_edges(v,p)]...)
     end
     return x

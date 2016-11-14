@@ -12,8 +12,8 @@ mtree = link!(
         n([Mode(:d,2)])
     )
 )
-randranks(mtree) = [e => rand(1:5) for e in edges(mtree, root_to_leaves)]
-maxranks(mtree) = [e => sqrt(msize(mode(mtree))) for e in edges(mtree, root_to_leaves)]
+randranks(mtree) = Dict(e => rand(1:5) for e in edges(mtree, root_to_leaves))
+maxranks(mtree) = Dict(e => sqrt(msize(mode(mtree))) for e in edges(mtree, root_to_leaves))
 
 x = rand(Complex{Float64},mode(mtree))
 y = contract!(decompose(x, mtree, maxrank()))
