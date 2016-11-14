@@ -43,8 +43,10 @@ function ModeTree!(free_modes::Vector{Mode})
     D = ModeDict(r => free_modes)
     return ModeTree(r,D)
 end
+ModeTree!(children::ModeTree...) = ModeTree!(Mode[], children...) 
 ModeTree(free_modes::Vector{Mode}, children::ModeTree...) = ModeTree!(free_modes, deepcopy(children)...)
 ModeTree(free_modes::Vector{Mode}) = ModeTree!(free_modes)
+ModeTree(children::ModeTree...) = ModeTree(Mode[], children...)
 
 function link!(v::ModeTree, u::ModeTree)
     link!(tree(v), tree(u))
